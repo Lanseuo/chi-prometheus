@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func Test_Logger(t *testing.T) {
@@ -18,7 +18,7 @@ func Test_Logger(t *testing.T) {
 	m := NewMiddleware("test")
 	n.Use(m)
 
-	n.Handle("/metrics", prometheus.Handler())
+	n.Handle("/metrics", promhttp.Handler())
 	n.Get(`/ok`, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
