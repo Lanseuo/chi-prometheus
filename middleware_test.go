@@ -4,42 +4,68 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/go-chi/chi"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/stretchr/testify/assert"
 )
 
-func Test_Logger(t *testing.T) {
+func Test(t *testing.T) {
 	recorder := httptest.NewRecorder()
 
-	n := chi.NewRouter()
-	m := NewMiddleware("test")
-	n.Use(m)
+	router := chi.NewRouter()
+	middleware := NewMiddleware("test")
+	router.Use(middleware)
 
-	n.Handle("/metrics", promhttp.Handler())
-	n.Get(`/ok`, func(w http.ResponseWriter, r *http.Request) {
+	router.Handle("/metrics", promhttp.Handler())
+	router.Get("/ok", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
+		fmt.Fprintln(w, "Ok")
+	})
+	router.Get("/users/{name}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "Hello "+chi.URLParam(r, "name"))
 	})
 
-	req1, err := http.NewRequest("GET", "http://localhost:3000/ok", nil)
+	req, err := http.NewRequest("GET", "/ok", nil)
 	if err != nil {
 		t.Error(err)
 	}
-	req2, err := http.NewRequest("GET", "http://localhost:3000/metrics", nil)
-	if err != nil {
-		t.Error(err)
-	}
+	router.ServeHTTP(recorder, req)
 
-	n.ServeHTTP(recorder, req1)
-	n.ServeHTTP(recorder, req2)
-	body := recorder.Body.String()
-	if !strings.Contains(body, reqsName) {
-		t.Errorf("body does not contain request total entry '%s'", reqsName)
+	req, err = http.NewRequest("GET", "/notfound", nil)
+	if err != nil {
+		t.Error(err)
 	}
-	if !strings.Contains(body, latencyName) {
-		t.Errorf("body does not contain request duration entry '%s'", reqsName)
+	router.ServeHTTP(recorder, req)
+
+	req, err = http.NewRequest("GET", "/users/user1", nil)
+	if err != nil {
+		t.Error(err)
 	}
+	router.ServeHTTP(recorder, req)
+
+	req, err = http.NewRequest("GET", "/users/user2", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	router.ServeHTTP(recorder, req)
+
+	req, err = http.NewRequest("GET", "/metrics", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	router.ServeHTTP(recorder, req)
+
+	metricsBody := recorder.Body.String()
+
+	assert.Contains(t, metricsBody, `chi_request_duration_milliseconds_sum{code="200",method="GET",path="/ok",service="test"} `)
+	assert.Contains(t, metricsBody, `chi_request_duration_milliseconds_count{code="200",method="GET",path="/ok",service="test"} 1`)
+
+	assert.Contains(t, metricsBody, `chi_request_duration_milliseconds_sum{code="404",method="GET",path="",service="test"} `)
+	assert.Contains(t, metricsBody, `chi_request_duration_milliseconds_count{code="404",method="GET",path="",service="test"} 1`)
+
+	assert.Contains(t, metricsBody, `chi_request_duration_milliseconds_sum{code="200",method="GET",path="/users/{name}",service="test"} `)
+	assert.Contains(t, metricsBody, `chi_request_duration_milliseconds_count{code="200",method="GET",path="/users/{name}",service="test"} 2`)
 }

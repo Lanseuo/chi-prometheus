@@ -4,8 +4,10 @@ package chiprometheus
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -59,8 +61,13 @@ func (c Middleware) handler(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
-		c.reqs.WithLabelValues(fmt.Sprint(ww.Status()), r.Method, r.URL.Path).Inc()
-		c.latency.WithLabelValues(fmt.Sprint(ww.Status()), r.Method, r.URL.Path).Observe(float64(time.Since(start).Nanoseconds()) / 1000000)
+
+		rctx := chi.RouteContext(r.Context())
+		routePattern := strings.Join(rctx.RoutePatterns, "")
+		routePattern = strings.Replace(routePattern, "/*/", "/", -1)
+
+		c.reqs.WithLabelValues(fmt.Sprint(ww.Status()), r.Method, routePattern).Inc()
+		c.latency.WithLabelValues(fmt.Sprint(ww.Status()), r.Method, routePattern).Observe(float64(time.Since(start).Nanoseconds()) / 1000000)
 	}
 	return http.HandlerFunc(fn)
 }
